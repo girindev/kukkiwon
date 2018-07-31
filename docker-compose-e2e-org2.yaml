@@ -1,0 +1,52 @@
+# Copyright IBM Corp. All Rights Reserved.
+#
+# SPDX-License-Identifier: Apache-2.0
+#
+
+version: '2'
+
+volumes:
+  peer0.org2.kukkiwon.com:
+  peer1.org2.kukkiwon.com:
+
+networks:
+  byfn:
+services:
+  ca1:
+    image: hyperledger/fabric-ca:$IMAGE_TAG
+    environment:
+      - FABRIC_CA_HOME=/etc/hyperledger/fabric-ca-server
+      - FABRIC_CA_SERVER_CA_NAME=ca-org2
+      - FABRIC_CA_SERVER_TLS_ENABLED=true
+      - FABRIC_CA_SERVER_TLS_CERTFILE=/etc/hyperledger/fabric-ca-server-config/ca.org2.kukkiwon.com-cert.pem
+      - FABRIC_CA_SERVER_TLS_KEYFILE=/etc/hyperledger/fabric-ca-server-config/24f32cf25c493b5471ae35f64c9eb267f5e94c43d72f7dfd6d67ea81cd1c8b19_sk
+        #FABRIC_CA_CLIENT
+      - FABRIC_CA_CLIENT_HOME=/etc/hyperledger/fabric-ca-client
+      - FABRIC_CA_CLIENT_CA_NAME=ca-org1
+      - FABRIC_CA_CLIENT_TLS_ENABLED=true
+      - FABRIC_CA_CLIENT_TLS_CERTFILE=/etc/hyperledger/fabric-ca-client-config/ca.org1.kukkiwon.com-cert.pem
+      - FABRIC_CA_CLIENT_TLS_KEYFILE=/etc/hyperledger/fabric-ca-client-config/24f32cf25c493b5471ae35f64c9eb267f5e94c43d72f7dfd6d67ea81cd1c8b19_sk
+    ports:
+      - "8054:7054"
+    command: sh -c 'fabric-ca-server start --ca.certfile /etc/hyperledger/fabric-ca-server-config/ca.org2.kukkiwon.com-cert.pem --ca.keyfile /etc/hyperledger/fabric-ca-server-config/24f32cf25c493b5471ae35f64c9eb267f5e94c43d72f7dfd6d67ea81cd1c8b19_sk -b admin:adminpw -d'
+    volumes:
+      - ./crypto-config/peerOrganizations/org2.kukkiwon.com/ca/:/etc/hyperledger/fabric-ca-server-config
+    container_name: ca_peerOrg2
+    networks:
+      - byfn
+
+  peer0.org2.kukkiwon.com:
+    container_name: peer0.org2.kukkiwon.com
+    extends:
+      file:  base/docker-compose-base.yaml
+      service: peer0.org2.kukkiwon.com
+    networks:
+      - byfn
+
+  peer1.org2.kukkiwon.com:
+    container_name: peer1.org2.kukkiwon.com
+    extends:
+      file:  base/docker-compose-base.yaml
+      service: peer1.org2.kukkiwon.com
+    networks:
+      - byfn

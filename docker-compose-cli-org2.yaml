@@ -1,0 +1,114 @@
+# Copyright IBM Corp. All Rights Reserved.
+#
+# SPDX-License-Identifier: Apache-2.0
+#
+
+version: '2'
+
+# 가상 디스크로 아래 3개의 volume을 생성함. 
+# (이렇게 하는 이유는 로컬디스크를 생성하지 않으므로써 추후 컨테이너 삭제시 같이 제거가 가능하기 때문.)
+volumes: 
+  orderer2.kukkiwon.com:
+  peer0.org2.kukkiwon.com:
+  peer1.org2.kukkiwon.com:
+
+# 컨테이너간 통신을 위해서 네트워크를 정의함.
+networks:
+  byfn:
+
+# compose up에 사용할 컨테이너를 정의
+services:
+  zookeeper2:
+    image: hyperledger/fabric-zookeeper 
+    hostname: zookeeper2
+    container_name: zookeeper2
+    ports:
+     - '2181:2181'
+     - '2888:2888'
+     - '3888:3888'
+    environment:
+      ZOO_MY_ID: 2
+      ZOO_SERVERS: server.1=zookeeper1:2888:3888 server.2=zookeeper2:2888:3888 server.3=zookeeper3:2888:3888
+    extra_hosts:
+      - "zookeeper1:172.27.42.122"
+      - "zookeeper2:172.27.42.123"
+      - "zookeeper3:172.27.42.122"
+    networks:
+      - byfn
+
+  kafka3:    
+    image: hyperledger/fabric-kafka
+    container_name: kafka3
+    environment:
+      - KAFKA_BROKER_ID=3
+      - KAFKA_MIN_INSYNC_REPLICAS=2
+      - KAFKA_DEFAULT_REPLICATION_FACTOR=3
+      - KAFKA_ZOOKEEPER_CONNECT=zookeeper1:2181,zookeeper2:2181,zookeeper3:32181
+      - KAFKA_ZOOKEEPER_CONNECTION_TIMEOUT_MS=30000   #add
+      - KAFKA_ADVERTISED_HOST_NAME=172.27.42.123  #add
+      - KAFKA_ADVERTISED_PORT=9092  #add
+    ports:
+      - "9092:9092"
+    extra_hosts:
+      - "zookeeper1:172.27.42.122"
+      - "zookeeper2:172.27.42.123"
+      - "zookeeper3:172.27.42.122"
+    networks:
+      - byfn
+
+  kafka4:
+    image: hyperledger/fabric-kafka
+    container_name: kafka4
+    environment:
+      - KAFKA_BROKER_ID=4
+      - KAFKA_MIN_INSYNC_REPLICAS=2
+      - KAFKA_DEFAULT_REPLICATION_FACTOR=3
+      - KAFKA_ZOOKEEPER_CONNECT=zookeeper1:2181,zookeeper2:2181,zookeeper3:32181
+      - KAFKA_ZOOKEEPER_CONNECTION_TIMEOUT_MS=30000   #add
+      - KAFKA_ADVERTISED_HOST_NAME=172.27.42.123  #add
+      - KAFKA_ADVERTISED_PORT=9093  #add
+    ports:
+      - "9093:9092"
+    extra_hosts:
+      - "zookeeper1:172.27.42.122"
+      - "zookeeper2:172.27.42.123"
+      - "zookeeper3:172.27.42.122"
+    networks:
+      - byfn
+
+  orderer2.kukkiwon.com:
+    extends:
+      file: base/docker-compose-base.yaml
+      service: orderer.kukkiwon.com
+    container_name: orderer2.kukkiwon.com
+    volumes:
+      - ./crypto-config/ordererOrganizations/kukkiwon.com/orderers/orderer2.kukkiwon.com/msp:/var/hyperledger/orderer/msp
+      - ./crypto-config/ordererOrganizations/kukkiwon.com/orderers/orderer2.kukkiwon.com/tls/:/var/hyperledger/orderer/tls
+      - orderer2.kukkiwon.com:/var/hyperledger/production/orderer
+    networks:
+      - byfn
+
+  peer0.org2.kukkiwon.com:
+    container_name: peer0.org2.kukkiwon.com
+    extends:
+      file: base/docker-compose-base.yaml
+      service: peer0.org2.kukkiwon.com
+
+  peer1.org2.kukkiwon.com:
+    container_name: peer1.org2.kukkiwon.com
+    extends:
+      file: base/docker-compose-base.yaml
+      service: peer1.org2.kukkiwon.com
+
+  cli:
+    container_name: cli
+    extends:
+      file: base/docker-compose-base.yaml
+      service: cli
+    environment:
+      - CORE_PEER_ADDRESS=peer0.org2.kukkiwon.com:9051 # 동일한 ORG내의 다른 peer의 endpoint를 나타내는데 사용됩니다.
+      - CORE_PEER_LOCALMSPID=Org2MSP #로컬 MSP 설정
+      - CORE_PEER_TLS_CERT_FILE=/opt/gopath/src/github.com/hyperledger/fabric/peer/crypto/peerOrganizations/org2.kukkiwon.com/peers/peer0.org2.kukkiwon.com/tls/server.crt
+      - CORE_PEER_TLS_KEY_FILE=/opt/gopath/src/github.com/hyperledger/fabric/peer/crypto/peerOrganizations/org2.kukkiwon.com/peers/peer0.org2.kukkiwon.com/tls/server.key
+      - CORE_PEER_TLS_ROOTCERT_FILE=/opt/gopath/src/github.com/hyperledger/fabric/peer/crypto/peerOrganizations/org2.kukkiwon.com/peers/peer0.org2.kukkiwon.com/tls/ca.crt
+      - CORE_PEER_MSPCONFIGPATH=/opt/gopath/src/github.com/hyperledger/fabric/peer/crypto/peerOrganizations/org2.kukkiwon.com/users/Admin@org2.kukkiwon.com/msp

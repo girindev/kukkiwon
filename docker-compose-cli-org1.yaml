@@ -1,0 +1,110 @@
+# Copyright IBM Corp. All Rights Reserved.
+#
+# SPDX-License-Identifier: Apache-2.0
+#
+
+version: '2'
+
+# 가상 디스크로 아래 3개의 volume을 생성함. 
+# (이렇게 하는 이유는 로컬디스크를 생성하지 않으므로써 추후 컨테이너 삭제시 같이 제거가 가능하기 때문.)
+volumes:
+  orderer1.kukkiwon.com:
+  peer0.org1.kukkiwon.com:
+  peer1.org1.kukkiwon.com:
+
+# 컨테이너간 통신을 위해서 네트워크를 정의함.
+networks:
+  byfn:
+
+# compose up에 사용할 컨테이너를 정의
+services:
+  zookeeper1:
+    extends:
+      file: base/docker-compose-base.yaml
+      service: zookeeper
+    hostname: zookeeper1 
+    container_name: zookeeper1
+    ports:
+     - '2181:2181'
+     - '2888:2888'
+     - '3888:3888'
+    environment:
+      ZOO_MY_ID: 1 #Zookeeper 전체 구성의 ID는 1~255사이에서 고유해야함.
+      ZOO_SERVERS: server.1=zookeeper1:2888:3888 server.2=zookeeper2:2888:3888 server.3=zookeeper3:2888:3888 #Zookeeper 전체 조직의 리스트.
+
+  zookeeper3:
+    extends:
+      file: base/docker-compose-base.yaml
+      service: zookeeper
+    hostname: zookeeper3
+    container_name: zookeeper3
+    ports:
+     - '32181:2181'
+     - '32888:2888'
+     - '33888:3888'
+    environment:
+      ZOO_MY_ID: 3 #Zookeeper 전체 구성의 ID는 1~255사이에서 고유해야함.
+      ZOO_SERVERS: server.1=zookeeper1:2888:3888 server.2=zookeeper2:2888:3888 server.3=zookeeper3:2888:3888
+
+  kafka1:
+    extends:
+      file: base/docker-compose-base.yaml
+      service: kafka
+    hostname: kafka1
+    container_name: kafka1
+    environment:
+      - KAFKA_BROKER_ID=1 #카프카 클러스터내에서 브로커를 구분하는 이름. (기본은 0)
+      - KAFKA_ADVERTISED_HOST_NAME=172.27.42.122  #지정하지 않을 경우 시스템내의 모든 인터페이스에 바인딩, 지정하면 특정 IP에 바인딩.
+      - KAFKA_ADVERTISED_PORT=9092  #카프카 브로커가 열고 있는 소켓 포트.
+    ports:
+      - "9092:9092"
+
+  kafka2:
+    extends:
+      file: base/docker-compose-base.yaml
+      service: kafka
+    hostname: kafka2
+    container_name: kafka2
+    environment:
+      - KAFKA_BROKER_ID=2
+      - KAFKA_ADVERTISED_HOST_NAME=172.27.42.122  #add
+      - KAFKA_ADVERTISED_PORT=9093  #add
+    ports:
+      - "9093:9092"    
+
+  orderer1.kukkiwon.com:
+    extends:
+      file: base/docker-compose-base.yaml
+      service: orderer.kukkiwon.com
+    container_name: orderer1.kukkiwon.com
+    volumes:
+      - ./crypto-config/ordererOrganizations/kukkiwon.com/orderers/orderer1.kukkiwon.com/msp:/var/hyperledger/orderer/msp
+      - ./crypto-config/ordererOrganizations/kukkiwon.com/orderers/orderer1.kukkiwon.com/tls/:/var/hyperledger/orderer/tls
+      - orderer1.kukkiwon.com:/var/hyperledger/production/orderer
+    networks:
+      - byfn
+
+  peer0.org1.kukkiwon.com:
+    container_name: peer0.org1.kukkiwon.com
+    extends:
+      file: base/docker-compose-base.yaml
+      service: peer0.org1.kukkiwon.com
+        
+  peer1.org1.kukkiwon.com:
+    container_name: peer1.org1.kukkiwon.com
+    extends:
+      file: base/docker-compose-base.yaml
+      service: peer1.org1.kukkiwon.com
+
+  cli:
+    container_name: cli
+    extends:
+      file: base/docker-compose-base.yaml
+      service: cli
+    environment:
+      - CORE_PEER_ADDRESS=peer0.org1.kukkiwon.com:7051  # 동일한 ORG내의 다른 peer의 endpoint를 나타내는데 사용됩니다.
+      - CORE_PEER_LOCALMSPID=Org1MSP #로컬 MSP 설정
+      - CORE_PEER_TLS_CERT_FILE=/opt/gopath/src/github.com/hyperledger/fabric/peer/crypto/peerOrganizations/org1.kukkiwon.com/peers/peer0.org1.kukkiwon.com/tls/server.crt #Peer간 통신에 사용될 인증서 파일
+      - CORE_PEER_TLS_KEY_FILE=/opt/gopath/src/github.com/hyperledger/fabric/peer/crypto/peerOrganizations/org1.kukkiwon.com/peers/peer0.org1.kukkiwon.com/tls/server.key #Peer간 통신에 사용될 Key 파일
+      - CORE_PEER_TLS_ROOTCERT_FILE=/opt/gopath/src/github.com/hyperledger/fabric/peer/crypto/peerOrganizations/org1.kukkiwon.com/peers/peer0.org1.kukkiwon.com/tls/ca.crt 
+      - CORE_PEER_MSPCONFIGPATH=/opt/gopath/src/github.com/hyperledger/fabric/peer/crypto/peerOrganizations/org1.kukkiwon.com/users/Admin@org1.kukkiwon.com/msp    

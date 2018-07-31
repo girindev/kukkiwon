@@ -1,0 +1,211 @@
+# Copyright IBM Corp. All Rights Reserved.
+#
+# SPDX-License-Identifier: Apache-2.0
+#
+
+version: '2'
+
+services:
+############################################
+# Orderer                          
+############################################
+  orderer.kukkiwon.com: 
+    image: hyperledger/fabric-orderer #해당 이미지를 사용.
+    environment:
+      - CORE_VM_DOCKER_HOSTCONFIG_NETWORKMODE=${COMPOSE_PROJECT_NAME}_byfn #사용할 네트워크 설정.
+      - ORDERER_GENERAL_LOGLEVER=error
+      - ORDERER_GENERAL_LISTENADDRESS=0.0.0.0 #어플리케이션 요청에 수신 대기하도록 바인딩할 IP.
+      - ORDERER_GENERAL_LISTENPORT=7050 #어플리케이션 요청에 수신 대기하도록 바인딩할 PORT.
+      - ORDERER_GENERAL_GENESISMETHOD=file #Provisional(동적인 생성) 과 File(GenesisFile 사용) 옵션이 있음. 
+      - ORDERER_GENERAL_GENESISFILE=/var/hyperledger/orderer/orderer.genesis.block #(genesis.block 파일 경로).
+      - ORDERER_GENERAL_LOCALMSPID=OrdererMSP # Local MSP 정보를 MSP Manager에 등록. 주의: channel의 msp중 하나와 일치해야함.
+      - ORDERER_GENERAL_LOCALMSPDIR=/var/hyperledger/orderer/msp #Orderer 검증에 필요한 Crypto 위치.
+      # enabled TLS
+      - ORDERER_GENERAL_TLS_ENABLED=true
+      - ORDERER_GENERAL_TLS_PRIVATEKEY=/var/hyperledger/orderer/tls/server.key #Orderer가 인증에 사용할 PEM으로 인코딩 된 개인키(private key).
+      - ORDERER_GENERAL_TLS_CERTIFICATE=/var/hyperledger/orderer/tls/server.crt #Orderer가 인증에 사용할 PEM으로 인코딩 된 공개키(public key).
+      - ORDERER_GENERAL_TLS_ROOTCAS=[/var/hyperledger/orderer/tls/ca.crt] #Kafka 클러스터의 인증서를 확인하는 데 사용되는 PEM으로 인코딩 된 신뢰할 수있는 서명자 인증서.
+      - ORDERER_KAFKA_RETRY_SHORTINTERVAL=1s #Kafka Broker가 없는 경우 재접속 연결 시도 주기.
+      - ORDERER_KAFKA_RETRY_SHORTTOTAL=30s #Kafka Broker가 없는 경우 총 재접속 연결 시도 시간.
+      - ORDERER_KAFKA_VERBOSE=true #Kafka 클러스터와 상호 작용하는 데 사용하는 클라이언트 라이브러리 인 sarama에 대한 로깅을 켭니다.
+      - ORDERER_KAFKA_BROKERS=[kafka1:9092,kafka2:9093,kafka3:9092,kafka4:9093] #Kafka Broker 정보.
+    working_dir: /opt/gopath/src/github.com/hyperledger/fabric #생성된 컨테이너의 작업 디렉토리.
+    command: orderer #컨테이너 생성 후 실행할 명령어
+    volumes: #컨테이너 외부와 내부의 디렉토리 공유 설정
+    - ../channel-artifacts/genesis.block:/var/hyperledger/orderer/orderer.genesis.block
+    ports: # 외부 : 내부 , 컨테이너의 외부포트를 컨테이너의 내부 포트로 매핑
+      - 7050:7050
+    extra_hosts: # etc/hosts에 외부 호스트 정보를 추가
+      - "kafka1:172.27.42.122"
+      - "kafka2:172.27.42.122"
+      - "kafka3:172.27.42.123"
+      - "kafka4:172.27.42.123"
+############################################
+# zookeeper                          
+############################################
+  zookeeper:
+    image: hyperledger/fabric-zookeeper
+    extra_hosts: # etc/hosts에 외부 호스트 정보를 추가
+      - "zookeeper1:172.27.42.122"
+      - "zookeeper2:172.27.42.123"
+      - "zookeeper3:172.27.42.122"
+    networks:
+      - byfn
+############################################
+# kafka                      
+############################################
+  kafka: 
+    image: hyperledger/fabric-kafka
+    environment:
+      - KAFKA_MESSAGE_MAX_BYTES=103809024 # 99 * 1024 B #kafka 메시지 최대 크기
+      - KAFKA_REPLICA_FETCH_MAX_BYTES=103809024 # 99 * 1024 B
+      #true(기본값) : leader가 부재일 경우 out-of-sync 방식을 따른다. ->메시지의 손실이 발생할 수 있다.
+      #false(설정값) : leader가 부재일 경우 in-sync replicas 방식을 따른다. -> 다음 리더로 대체되지 않으면 해당 파티션을 사용할 수 없다.
+      - KAFKA_UNCLEAN_LEADER_ELECTION_ENABLE=false 
+      - KAFKA_MIN_INSYNC_REPLICAS=2 #kafka의 relication_factor 그룹의 최소 값.
+      - KAFKA_DEFAULT_REPLICATION_FACTOR=3 #기본으로 kafka의 topic을 몇개 복제할 것인지 결정.
+      - KAFKA_ZOOKEEPER_CONNECT=zookeeper1:2181,zookeeper2:2181,zookeeper3:32181 #여러 주키퍼 노드를 연결하여 클러스터를 형성한다.
+      - KAFKA_ZOOKEEPER_CONNECTION_TIMEOUT_MS=30000 
+    extra_hosts: # etc/hosts에 외부 호스트 정보를 추가
+      - "zookeeper1:172.27.42.122"
+      - "zookeeper2:172.27.42.123"
+      - "zookeeper3:172.27.42.122"
+    networks:
+      - byfn
+############################################
+#peer0 - org1
+############################################
+  peer0.org1.kukkiwon.com:
+    container_name: peer0.org1.kukkiwon.com
+    extends:
+      file: ./peer-base.yaml
+      service: peer-base
+    environment:
+      - CORE_PEER_ID=peer0.org1.kukkiwon.com #Peer ID는 Peer 인스턴스를 식별하는데 사용됩니다.
+      - CORE_PEER_ADDRESS=peer0.org1.kukkiwon.com:7051 # 동일한 ORG내의 다른 peer의 endpoint를 나타내는데 사용됩니다.
+      - CORE_PEER_GOSSIP_BOOTSTRAP=peer1.org1.kukkiwon.com:7051 #해당 Peer가 도달할 다른 피어의 목록.(동일한 조직!)
+      #Org 외부의 Peer에게 공개되는 endpoint 설정
+      #해당 설정이 없으면 Peer는 다른 Org에 알려지지 않습니다.
+      - CORE_PEER_GOSSIP_EXTERNALENDPOINT=peer0.org1.kukkiwon.com:7051
+      - CORE_PEER_LOCALMSPID=Org1MSP #로컬 MSP 설정
+    volumes:
+        - /var/run/:/host/var/run/
+        - ../crypto-config/peerOrganizations/org1.kukkiwon.com/peers/peer0.org1.kukkiwon.com/msp:/etc/hyperledger/fabric/msp
+        - ../crypto-config/peerOrganizations/org1.kukkiwon.com/peers/peer0.org1.kukkiwon.com/tls:/etc/hyperledger/fabric/tls
+        - peer0.org1.kukkiwon.com:/var/hyperledger/production
+    ports:
+      - 7051:7051
+      - 7053:7053
+    extra_hosts:
+      - orderer1.kukkiwon.com:172.27.42.122
+      - peer1.org1.kukkiwon.com:172.27.42.122
+############################################
+#peer1 - org1
+############################################
+  peer1.org1.kukkiwon.com:
+    container_name: peer1.org1.kukkiwon.com
+    extends:
+      file: ./peer-base.yaml
+      service: peer-base
+    environment:
+      - CORE_PEER_ID=peer1.org1.kukkiwon.com #Peer ID는 Peer 인스턴스를 식별하는데 사용됩니다.
+      - CORE_PEER_ADDRESS=peer1.org1.kukkiwon.com:7051 # 동일한 ORG내의 다른 peer의 endpoint를 나타내는데 사용됩니다.
+      - CORE_PEER_GOSSIP_BOOTSTRAP=peer0.org1.kukkiwon.com:7051 #해당 Peer가 도달할 다른 피어의 목록.(동일한 조직!)
+        #Org 외부의 Peer에게 공개되는 endpoint 설정
+        #해당 설정이 없으면 Peer는 다른 Org에 알려지지 않습니다.
+      - CORE_PEER_GOSSIP_EXTERNALENDPOINT=peer1.org1.kukkiwon.com:7051
+      - CORE_PEER_LOCALMSPID=Org1MSP #로컬 MSP 설정
+    volumes:
+        - /var/run/:/host/var/run/
+        - ../crypto-config/peerOrganizations/org1.kukkiwon.com/peers/peer1.org1.kukkiwon.com/msp:/etc/hyperledger/fabric/msp
+        - ../crypto-config/peerOrganizations/org1.kukkiwon.com/peers/peer1.org1.kukkiwon.com/tls:/etc/hyperledger/fabric/tls
+        - peer1.org1.kukkiwon.com:/var/hyperledger/production
+    ports:
+      - 8051:7051
+      - 8053:7053
+    extra_hosts:
+      - orderer1.kukkiwon.com:172.27.42.122  
+      - peer0.org1.kukkiwon.com:172.27.42.122 
+############################################
+#peer0 - org2
+############################################
+  peer0.org2.kukkiwon.com:
+    container_name: peer0.org2.kukkiwon.com
+    extends:
+      file: ./peer-base.yaml
+      service: peer-base
+    environment:
+      - CORE_PEER_ID=peer0.org2.kukkiwon.com
+      - CORE_PEER_ADDRESS=peer0.org2.kukkiwon.com:7051
+      - CORE_PEER_GOSSIP_EXTERNALENDPOINT=peer0.org2.kukkiwon.com:7051
+      - CORE_PEER_GOSSIP_BOOTSTRAP=peer1.org2.kukkiwon.com:7051
+      - CORE_PEER_LOCALMSPID=Org2MSP
+    volumes:
+        - /var/run/:/host/var/run/
+        - ../crypto-config/peerOrganizations/org2.kukkiwon.com/peers/peer0.org2.kukkiwon.com/msp:/etc/hyperledger/fabric/msp
+        - ../crypto-config/peerOrganizations/org2.kukkiwon.com/peers/peer0.org2.kukkiwon.com/tls:/etc/hyperledger/fabric/tls
+        - peer0.org2.kukkiwon.com:/var/hyperledger/production
+    ports:
+      - 9051:7051
+      - 9053:7053
+    extra_hosts:
+      - orderer2.kukkiwon.com:172.27.42.123  
+      - peer1.org2.kukkiwon.com:172.27.42.123
+############################################
+#peer1 - org2
+############################################
+  peer1.org2.kukkiwon.com:
+    container_name: peer1.org2.kukkiwon.com
+    extends:
+      file: ./peer-base.yaml
+      service: peer-base
+    environment:
+      - CORE_PEER_ID=peer1.org2.kukkiwon.com
+      - CORE_PEER_ADDRESS=peer1.org2.kukkiwon.com:7051
+      - CORE_PEER_GOSSIP_EXTERNALENDPOINT=peer1.org2.kukkiwon.com:7051
+      - CORE_PEER_GOSSIP_BOOTSTRAP=peer0.org2.kukkiwon.com:7051
+      - CORE_PEER_LOCALMSPID=Org2MSP
+    volumes:
+        - /var/run/:/host/var/run/
+        - ../crypto-config/peerOrganizations/org2.kukkiwon.com/peers/peer1.org2.kukkiwon.com/msp:/etc/hyperledger/fabric/msp
+        - ../crypto-config/peerOrganizations/org2.kukkiwon.com/peers/peer1.org2.kukkiwon.com/tls:/etc/hyperledger/fabric/tls
+        - peer1.org2.kukkiwon.com:/var/hyperledger/production
+    ports:
+      - 10051:7051
+      - 10053:7053 
+    extra_hosts:
+      - orderer2.kukkiwon.com:172.27.42.123  
+      - peer0.org2.kukkiwon.com:172.27.42.123
+############################################
+# cli                          
+############################################
+  cli:
+    image: hyperledger/fabric-tools:$IMAGE_TAG
+    tty: true
+    stdin_open: true
+    environment:
+      - GOPATH=/opt/gopath
+      - CORE_VM_ENDPOINT=unix:///host/var/run/docker.sock # VM Ware의 Endpoint 설정
+      #- CORE_LOGGING_LEVEL=DEBUG
+      - CORE_LOGGING_LEVEL=INFO
+      - CORE_PEER_ID=cli #Peer ID는 Peer 인스턴스를 식별하는데 사용됩니다.
+      - CORE_PEER_TLS_ENABLED=true # 보안설정 (TLS) 사용 여부
+    working_dir: /opt/gopath/src/github.com/hyperledger/fabric/peer #생성된 컨테이너의 작업 디렉토리      
+    command: /bin/bash #컨테이너 생성 후 실행 도리 명령어
+    volumes:
+        - /var/run/:/host/var/run/
+        - ../../chaincode/:/opt/gopath/src/github.com/chaincode
+        - ../crypto-config:/opt/gopath/src/github.com/hyperledger/fabric/peer/crypto/
+        - ../scripts:/opt/gopath/src/github.com/hyperledger/fabric/peer/scripts/
+        - ../channel-artifacts:/opt/gopath/src/github.com/hyperledger/fabric/peer/channel-artifacts    
+    networks:
+      - byfn
+    extra_hosts:
+      - "orderer1.kukkiwon.com:172.27.42.122"
+      - "orderer2.kukkiwon.com:172.27.42.123"  
+      - "peer0.org1.kukkiwon.com:172.27.42.122"  
+      - "peer1.org1.kukkiwon.com:172.27.42.122"  
+      - "peer0.org2.kukkiwon.com:172.27.42.123"  
+      - "peer1.org2.kukkiwon.com:172.27.42.123"  
+
+      
